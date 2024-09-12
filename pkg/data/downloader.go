@@ -48,7 +48,6 @@ func (p *SlotPreProcessor) Process(ctx context.Context) error {
 	for {
 		select {
 		case slot := <-p.chSlots:
-			log.Printf("slot: %d", slot)
 			if data == nil || slotCount > BlocksPerFile {
 				if data != nil {
 					data.Close()

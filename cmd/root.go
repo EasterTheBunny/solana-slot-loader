@@ -49,7 +49,7 @@ var (
 			chSlots := make(chan uint64, 100)
 
 			slotLoadSvc := rpc.NewSlotRangeService(loader, chSlots)
-			slotLoadSvc.LoadAndBackfill(ctx, backfillRange)
+			_ = slotLoadSvc.LoadAndBackfill(ctx, backfillRange)
 
 			group := async.NewWorkerGroup(20)
 

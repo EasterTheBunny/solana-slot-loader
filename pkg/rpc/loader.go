@@ -273,7 +273,6 @@ func (s *SlotRangeService) runRange(ctx context.Context, loader *Loader, chSlot 
 	}
 
 	for {
-		log.Println("LoadSlotsRange")
 		select {
 		case <-ctx.Done():
 			return
