@@ -74,7 +74,12 @@ func (l *Loader) SlotSubscribe(ctx context.Context, chSlot chan uint64) error {
 }
 
 func (l *Loader) GetLatestSlot(ctx context.Context) (uint64, error) {
-	return l.client.GetBlockHeight(ctx, rpc.CommitmentFinalized)
+	result, err := l.client.GetLatestBlockhash(ctx, rpc.CommitmentFinalized)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.Context.Slot, nil
 }
 
 func (l *Loader) LoadSlotsRange(ctx context.Context, start, end uint64, chSlots chan<- uint64) error {
@@ -123,6 +128,10 @@ func (l *Loader) LoadSlotsFrom(ctx context.Context, start uint64, chSlots chan<-
 		}
 
 		chSlots <- slot
+	}
+
+	if lastLoaded == 0 {
+		lastLoaded = start
 	}
 
 	return lastLoaded, nil
@@ -264,6 +273,7 @@ func (s *SlotRangeService) runRange(ctx context.Context, loader *Loader, chSlot 
 	}
 
 	for {
+		log.Println("LoadSlotsRange")
 		select {
 		case <-ctx.Done():
 			return
