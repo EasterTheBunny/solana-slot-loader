@@ -16,6 +16,7 @@ import (
 func init() {
 	rootCmd.Flags().StringVarP(&network, "network", "n", "private", "network configuration")
 	rootCmd.Flags().StringVarP(&directory, "output", "o", "./data_files", "log file output directory")
+	rootCmd.Flags().IntVarP(&workerCount, "threads", "t", 20, "worker thread count")
 
 	rootCmd.Flags().StringVar(&rpcEndpoint, "rpc", rpc.DevNet_RPC, "rpc endpoint (devnet default)")
 	rootCmd.Flags().StringVar(&wsEndpoint, "ws", rpc.DevNet_WS, "websocket endpoint (devnet default)")
@@ -25,8 +26,9 @@ func init() {
 }
 
 var (
-	network   string
-	directory string
+	network     string
+	directory   string
+	workerCount int
 
 	rpcEndpoint string
 	wsEndpoint  string
@@ -54,14 +56,14 @@ var (
 				}
 			}()
 
-			chSlots := make(chan uint64, 100)
+			chSlots := make(chan uint64, 1000)
 
 			if backfill {
 				slotLoadSvc := rpc.NewSlotRangeService(loader, chSlots)
 				_ = slotLoadSvc.LoadAndBackfill(ctx, backfillRange)
 			}
 
-			group := async.NewWorkerGroup(20)
+			group := async.NewWorkerGroup(workerCount)
 			writeManager := data.NewFileManager(directory)
 			_ = writeManager.Start(ctx)
 

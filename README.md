@@ -6,10 +6,10 @@ This application downloads Solana logs from an RPC endpoint and stores program l
 
 ```
 # download without backfill
-solana-slot-loader --rpc=[rpc_endpoint] --ws=[ws_endpoint] -o=./data_files
+solana-slot-loader -t=20 --rpc=[rpc_endpoint] --ws=[ws_endpoint] -o=./data_files
 
 # download with backfill
-solana-slot-loader --rpc=[rpc_endpoint] -ws=[ws_endpoint] --backfill --backfill-range=25000
+solana-slot-loader -t=100 --rpc=[rpc_endpoint] -ws=[ws_endpoint] --backfill --backfill-range=25000
 ```
 
 ## Issues
