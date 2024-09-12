@@ -13,6 +13,7 @@ import (
 	"github.com/gagliardetto/solana-go/rpc/jsonrpc"
 	"github.com/gagliardetto/solana-go/rpc/ws"
 
+	"github.com/easterthebunny/solana-slot-loader/pkg/async"
 	"github.com/easterthebunny/solana-slot-loader/pkg/data"
 )
 
@@ -31,11 +32,13 @@ var (
 type Loader struct {
 	client   *rpc.Client
 	wsClient *ws.Client
+	limiter  *async.RateLimiter
 }
 
 type LoaderConfig struct {
-	RPC string
-	WS  string
+	RPC     string
+	WS      string
+	Limiter *async.RateLimiter
 }
 
 func NewLoader(config LoaderConfig) (*Loader, error) {
@@ -47,6 +50,7 @@ func NewLoader(config LoaderConfig) (*Loader, error) {
 	return &Loader{
 		client:   rpc.New(config.RPC),
 		wsClient: wsClient,
+		limiter:  config.Limiter,
 	}, nil
 }
 
@@ -74,6 +78,12 @@ func (l *Loader) SlotSubscribe(ctx context.Context, chSlot chan uint64) error {
 }
 
 func (l *Loader) GetLatestSlot(ctx context.Context) (uint64, error) {
+	if l.limiter != nil {
+		if err := l.limiter.Call(); err != nil {
+			return 0, err
+		}
+	}
+
 	result, err := l.client.GetLatestBlockhash(ctx, rpc.CommitmentFinalized)
 	if err != nil {
 		return 0, err
@@ -85,6 +95,12 @@ func (l *Loader) GetLatestSlot(ctx context.Context) (uint64, error) {
 func (l *Loader) LoadSlotsRange(ctx context.Context, start, end uint64, chSlots chan<- uint64) error {
 	if start >= end {
 		return errors.New("the start block must come before the end block")
+	}
+
+	if l.limiter != nil {
+		if err := l.limiter.Call(); err != nil {
+			return err
+		}
 	}
 
 	result, err := l.client.GetBlocks(ctx, start, &end, rpc.CommitmentFinalized)
@@ -102,6 +118,12 @@ func (l *Loader) LoadSlotsRange(ctx context.Context, start, end uint64, chSlots 
 func (l *Loader) LoadSlotsFrom(ctx context.Context, start uint64, chSlots chan<- uint64) (uint64, error) {
 	var lastLoaded uint64
 
+	if l.limiter != nil {
+		if err := l.limiter.Call(); err != nil {
+			return 0, err
+		}
+	}
+
 	end, err := l.GetLatestSlot(ctx)
 	if err != nil {
 		return 0, err
@@ -115,6 +137,12 @@ func (l *Loader) LoadSlotsFrom(ctx context.Context, start uint64, chSlots chan<-
 
 	if start > end {
 		return 0, nil
+	}
+
+	if l.limiter != nil {
+		if err := l.limiter.Call(); err != nil {
+			return 0, err
+		}
 	}
 
 	result, err := l.client.GetBlocks(ctx, start, &end, rpc.CommitmentFinalized)
@@ -140,6 +168,12 @@ func (l *Loader) LoadSlotsFrom(ctx context.Context, start uint64, chSlots chan<-
 func (l *Loader) LoadBlockMessages(ctx context.Context, slot uint64) ([]data.InstructionLogs, error) {
 	logs := make([]data.InstructionLogs, 0)
 
+	if l.limiter != nil {
+		if err := l.limiter.Call(); err != nil {
+			return nil, err
+		}
+	}
+
 	includeRewards := false
 	block, err := l.client.GetBlockWithOpts(
 		ctx,
@@ -164,6 +198,12 @@ func (l *Loader) LoadBlockMessages(ctx context.Context, slot uint64) ([]data.Ins
 	}
 
 	for _, sig := range block.Signatures {
+		if l.limiter != nil {
+			if err := l.limiter.Call(); err != nil {
+				return nil, err
+			}
+		}
+
 		trx, err := l.client.GetTransaction(ctx, sig, &opts)
 		if err != nil {
 			if err, isRPCError := err.(*jsonrpc.RPCError); isRPCError && err.Code == -32015 {

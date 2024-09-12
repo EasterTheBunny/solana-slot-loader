@@ -20,6 +20,7 @@ func init() {
 
 	rootCmd.Flags().StringVar(&rpcEndpoint, "rpc", rpc.DevNet_RPC, "rpc endpoint (devnet default)")
 	rootCmd.Flags().StringVar(&wsEndpoint, "ws", rpc.DevNet_WS, "websocket endpoint (devnet default)")
+	rootCmd.Flags().Uint8Var(&limit, "rpc-limit", 0, "query per second limit on rpc (default 0 -- no limit)")
 
 	rootCmd.Flags().BoolVar(&backfill, "backfill", false, "should the service backfill")
 	rootCmd.Flags().Uint64Var(&backfillRange, "backfill-depth", 10_000, "number of slots to backfill to (default 50,000)")
@@ -32,6 +33,7 @@ var (
 
 	rpcEndpoint string
 	wsEndpoint  string
+	limit       uint8
 
 	backfill      bool
 	backfillRange uint64
@@ -40,13 +42,13 @@ var (
 		Short: "run",
 		Long:  "run",
 		Run: func(cmd *cobra.Command, _ []string) {
-			loader, err := rpc.NewLoader(getLoaderConfig(cmd))
+			ctx, cancel := context.WithCancel(cmd.Context())
+
+			loader, err := rpc.NewLoader(getLoaderConfig(ctx, cmd))
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "%s", err.Error())
 				os.Exit(2)
 			}
-
-			ctx, cancel := context.WithCancel(cmd.Context())
 
 			chSig := make(chan os.Signal, 1)
 			signal.Notify(chSig, os.Interrupt)
@@ -85,7 +87,7 @@ func Execute() {
 	}
 }
 
-func getLoaderConfig(cmd *cobra.Command) rpc.LoaderConfig {
+func getLoaderConfig(ctx context.Context, cmd *cobra.Command) rpc.LoaderConfig {
 	switch network {
 	case "dev":
 		rpcEndpoint = rpc.DevNet_RPC
@@ -100,8 +102,16 @@ func getLoaderConfig(cmd *cobra.Command) rpc.LoaderConfig {
 		os.Exit(3)
 	}
 
+	var limiter *async.RateLimiter
+
+	if limit > 0 {
+		limiter = async.NewRateLimiter(limit)
+		limiter.Start(ctx)
+	}
+
 	return rpc.LoaderConfig{
-		RPC: rpcEndpoint,
-		WS:  wsEndpoint,
+		RPC:     rpcEndpoint,
+		WS:      wsEndpoint,
+		Limiter: limiter,
 	}
 }
