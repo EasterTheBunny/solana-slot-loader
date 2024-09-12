@@ -15,15 +15,23 @@ import (
 
 func init() {
 	rootCmd.Flags().StringVarP(&network, "network", "n", "private", "network configuration")
+	rootCmd.Flags().StringVarP(&directory, "output", "o", "./data_files", "log file output directory")
+
 	rootCmd.Flags().StringVar(&rpcEndpoint, "rpc", rpc.DevNet_RPC, "rpc endpoint (devnet default)")
 	rootCmd.Flags().StringVar(&wsEndpoint, "ws", rpc.DevNet_WS, "websocket endpoint (devnet default)")
-	rootCmd.Flags().Uint64Var(&backfillRange, "backfill-to", 50_000, "number of slots to backfill to (default 50,000)")
+
+	rootCmd.Flags().BoolVar(&backfill, "backfill", false, "should the service backfill")
+	rootCmd.Flags().Uint64Var(&backfillRange, "backfill-depth", 10_000, "number of slots to backfill to (default 50,000)")
 }
 
 var (
-	network       string
-	rpcEndpoint   string
-	wsEndpoint    string
+	network   string
+	directory string
+
+	rpcEndpoint string
+	wsEndpoint  string
+
+	backfill      bool
 	backfillRange uint64
 
 	rootCmd = &cobra.Command{
@@ -48,12 +56,16 @@ var (
 
 			chSlots := make(chan uint64, 100)
 
-			slotLoadSvc := rpc.NewSlotRangeService(loader, chSlots)
-			_ = slotLoadSvc.LoadAndBackfill(ctx, backfillRange)
+			if backfill {
+				slotLoadSvc := rpc.NewSlotRangeService(loader, chSlots)
+				_ = slotLoadSvc.LoadAndBackfill(ctx, backfillRange)
+			}
 
 			group := async.NewWorkerGroup(20)
+			writeManager := data.NewFileManager(directory)
+			_ = writeManager.Start(ctx)
 
-			slotRangeSvc := data.NewSlotRangeService(loader, group, chSlots)
+			slotRangeSvc := data.NewSlotRangeService(writeManager, loader, group, directory, chSlots)
 			if err := slotRangeSvc.Process(ctx); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
 				os.Exit(3)

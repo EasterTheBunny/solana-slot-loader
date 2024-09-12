@@ -4,61 +4,45 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/easterthebunny/solana-slot-loader/pkg/async"
-)
-
-const (
-	BlocksPerFile = 50
 )
 
 type Loader interface {
 	LoadBlockMessages(ctx context.Context, slot uint64) ([]InstructionLogs, error)
 }
 
-type SlotPreProcessor struct {
-	loader  Loader
-	group   *async.WorkerGroup
-	chSlots <-chan uint64
+type WriteManager interface {
+	WriterForSlot(uint64) (io.Writer, error)
 }
 
-func NewSlotRangeService(loader Loader, group *async.WorkerGroup, slots <-chan uint64) *SlotPreProcessor {
+type SlotPreProcessor struct {
+	writer    WriteManager
+	loader    Loader
+	group     *async.WorkerGroup
+	directory string
+	chSlots   <-chan uint64
+}
+
+func NewSlotRangeService(writer WriteManager, loader Loader, group *async.WorkerGroup, directory string, slots <-chan uint64) *SlotPreProcessor {
 	return &SlotPreProcessor{
-		loader:  loader,
-		group:   group,
-		chSlots: slots,
+		writer:    writer,
+		loader:    loader,
+		group:     group,
+		directory: directory,
+		chSlots:   slots,
 	}
 }
 
 func (p *SlotPreProcessor) Process(ctx context.Context) error {
-	var (
-		data      *DataFile
-		startSlot uint64
-		slotCount int
-		err       error
-	)
-
-	defer func() {
-		if data != nil {
-			data.Close()
-		}
-	}()
-
 	for {
 		select {
 		case slot := <-p.chSlots:
-			if data == nil || slotCount > BlocksPerFile {
-				if data != nil {
-					data.Close()
-				}
-
-				startSlot = slot
-				slotCount = 0
-
-				if data, err = NewDataFile(fmt.Sprintf("./data_files/slot_logs_%d.txt", startSlot)); err != nil {
-					return err
-				}
+			data, err := p.writer.WriterForSlot(slot)
+			if err != nil {
+				log.Printf("error getting writer: %s", err.Error())
 			}
 
 			if err = p.group.Do(ctx, func(ctx context.Context) {
@@ -78,9 +62,6 @@ func (p *SlotPreProcessor) Process(ctx context.Context) error {
 			}); err != nil {
 				return err
 			}
-
-			slotCount++
-
 		case <-ctx.Done():
 			return nil
 		}
